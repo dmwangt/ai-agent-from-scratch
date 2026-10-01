@@ -1,74 +1,74 @@
 import inspect
 import json
-from typing import get_type_hints
+from types import SimpleNamespace
+from typing import Any, get_type_hints
+
+from pydantic import TypeAdapter
 
 
-def function_to_input_schema(func) -> dict:
-    """Convert a function's signature to a JSON Schema for tool parameters.
+def function_to_input_schema(func, *, localns=None) -> dict:
+    """Build general JSON Schema for a tool called with func(**arguments).
 
-    Inspects type hints and docstring to generate the schema.
+    Supports Pydantic-compatible annotations, nested containers, unions,
+    Literal/Enum, Annotated constraints, dataclasses, TypedDict and models.
+    Shared definitions preserve recursive references and model-name collisions.
+    Missing annotations mean Any. Defaults determine requiredness but are not
+    emitted: Python applies them at call time. Injected self/context are skipped.
+    Unsupported signatures/types and unresolved references raise TypeError.
+    Pass localns for string references to locally defined types.
+
+    This does not deserialize arguments or enforce provider-specific schema
+    restrictions. Only use trusted functions: resolving annotations evaluates
+    their forward-reference expressions.
     """
+    parameters = {
+        name: param for name, param in inspect.signature(func).parameters.items()
+        if name not in ("self", "context")
+    }
+    for name, param in parameters.items():
+        if param.kind not in (
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        ):
+            raise TypeError(f"Parameter {name!r} cannot be passed as a named tool argument")
+
+    # Resolve only exposed inputs, excluding return and injected context hints.
+    annotations = {
+        name: param.annotation for name, param in parameters.items()
+        if param.annotation is not inspect.Parameter.empty
+    }
+    target = inspect.unwrap(func)
     try:
-        hints = get_type_hints(func)
-    except Exception:
-        # Fallback for closures where get_type_hints can't resolve annotations
-        hints = {
-            name: param.annotation
-            for name, param in inspect.signature(func).parameters.items()
-            if param.annotation is not inspect.Parameter.empty
-        }
-    sig = inspect.signature(func)
+        hints = get_type_hints(
+            SimpleNamespace(__annotations__=annotations),
+            globalns=getattr(target, "__globals__", {}),
+            localns=localns, include_extras=True,
+        )
+    except Exception as exc:
+        raise TypeError(f"Cannot resolve input annotations: {exc}") from exc
+
+    adapters = []
+    for name in parameters:
+        try:
+            adapter = TypeAdapter(hints.get(name, Any))
+        except Exception as exc:
+            raise TypeError(f"Unsupported annotation for parameter {name!r}: {exc}") from exc
+        adapters.append((name, "validation", adapter))
+    try:
+        fields, definitions = TypeAdapter.json_schemas(adapters)
+    except Exception as exc:
+        raise TypeError(f"Cannot generate input JSON Schema: {exc}") from exc
 
     properties = {}
-    required = []
-
-    for name, param in sig.parameters.items():
-        if name in ("self", "context"):
-            continue
-
-        prop = {}
-        hint = hints.get(name)
-
-        if hint == str:
-            prop["type"] = "string"
-        elif hint == int:
-            prop["type"] = "integer"
-        elif hint == float:
-            prop["type"] = "number"
-        elif hint == bool:
-            prop["type"] = "boolean"
-        elif hint == list or (hasattr(hint, "__origin__") and hint.__origin__ is list):
-            prop["type"] = "array"
-            # Try to get item type
-            if hasattr(hint, "__args__") and hint.__args__:
-                item_type = hint.__args__[0]
-                if item_type == str:
-                    prop["items"] = {"type": "string"}
-                elif item_type == int:
-                    prop["items"] = {"type": "integer"}
-                elif hasattr(item_type, "model_json_schema"):
-                    prop["items"] = item_type.model_json_schema()
-        elif hasattr(hint, "model_json_schema"):
-            # Pydantic model
-            prop = hint.model_json_schema()
-        else:
-            prop["type"] = "string"
-
-        # Add description from docstring if available
-        prop["description"] = f"Parameter: {name}"
-
+    for name in parameters:
+        prop = dict(fields[(name, "validation")])
+        prop.setdefault("description", f"Parameter: {name}")
         properties[name] = prop
-
-        if param.default is inspect.Parameter.empty:
-            required.append(name)
-
-    schema = {
-        "type": "object",
-        "properties": properties,
-    }
+    schema = {"type": "object", "properties": properties, **definitions}
+    required = [name for name, param in parameters.items()
+                if param.default is inspect.Parameter.empty]
     if required:
         schema["required"] = required
-
     return schema
 
 
