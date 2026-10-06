@@ -1,18 +1,18 @@
 """RAG functionality: embeddings, chunking, and vector search."""
 
-from openai import OpenAI
+from google import genai
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-def get_embeddings(texts, model="text-embedding-3-small") -> np.ndarray:
-    """Convert text to embedding vectors."""
-    client = OpenAI()
+def get_embeddings(texts, model="gemini-embedding-001") -> np.ndarray:
+    """Convert text to Gemini embedding vectors using GEMINI_API_KEY or GOOGLE_API_KEY."""
     if isinstance(texts, str):
         texts = [texts]
 
-    response = client.embeddings.create(input=texts, model=model)
-    return np.array([item.embedding for item in response.data])
+    with genai.Client() as client:
+        response = client.models.embed_content(contents=texts, model=model)
+    return np.array([item.values for item in response.embeddings])
 
 
 def fixed_length_chunking(text, chunk_size=500, overlap=50) -> list[str]:

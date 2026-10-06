@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 os.environ['LITELLM_LOCAL_MODEL_COST_MAP'] = 'True'
 os.environ['ANONYMIZED_TELEMETRY'] = 'False'
-for key in ('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'TAVILY_API_KEY', 'HF_TOKEN', 'E2B_API_KEY'):
+for key in ('OPENAI_API_KEY', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'TAVILY_API_KEY', 'HF_TOKEN', 'E2B_API_KEY'):
     os.environ[key] = 'offline-notebook-test'
 import dotenv
 dotenv.load_dotenv = lambda *a, **kw: False
@@ -125,6 +125,16 @@ def embedding(self, input, **kwargs):
     return CreateEmbeddingResponse(model='offline',object='list',usage={'prompt_tokens':1,'total_tokens':1},data=[
         {'index':i,'object':'embedding','embedding':[float(len(t)%7+1),float(sum(t.encode())%11+1),1.0]} for i,t in enumerate(texts)])
 Embeddings.create=embedding
+from google.genai.models import Models
+from google.genai.types import EmbedContentResponse, ContentEmbedding
+def gemini_embedding(self, *, contents, model, **kwargs):
+    texts = [contents] if isinstance(contents, str) else contents
+    assert texts, 'Do not submit an empty embedding batch'
+    return EmbedContentResponse(embeddings=[
+        ContentEmbedding(values=[float(len(t)%7+1), float(sum(t.encode())%11+1), 1.0])
+        for t in texts
+    ])
+Models.embed_content = gemini_embedding
 import anthropic
 from anthropic.resources.messages import Messages
 Messages.create=lambda self, **kw: NS(content=[NS(type='text',text='4')])

@@ -60,6 +60,7 @@ Create a `.env` file in the project root with the following keys:
 
 ```
 OPENAI_API_KEY=sk-...          # Required for all chapters
+GEMINI_API_KEY=...            # Required for CH05 and scratch_agents.rag embeddings
 ANTHROPIC_API_KEY=sk-ant-...   # Required for CH02 Anthropic examples
 TAVILY_API_KEY=tvly-...        # Required for CH03 web search
 HF_TOKEN=hf_...                # Required for CH02 GAIA benchmark
@@ -73,7 +74,7 @@ For **Restart Kernel and Run All**, prepare each chapter's prerequisites first:
 |---|---|
 | CH02 | Anthropic key; Hugging Face account with accepted GAIA access and `HF_TOKEN` |
 | CH03–CH04 | Tavily key; Node.js/npm (`npx`) for the Tavily MCP server; CH04 also needs GAIA access |
-| CH05 | Tavily key and GAIA access/downloads for attachment exercises |
+| CH05 | Gemini key for embeddings; Tavily key and GAIA access/downloads for attachment exercises |
 | CH06 | OpenAI key for model calls and ChromaDB embeddings |
 | CH07 | Tavily key for search examples |
 | CH08 | E2B key; Tavily key only for sandbox tools that use it |
